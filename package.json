@@ -2,10 +2,10 @@
   "name": "llm-tutor-demo",
   "version": "1.0.0",
   "description": "Simple LLM-powered tutor demo with explain, quiz, and simplify modes",
-  "main": "api/server.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node api/server.js",
-    "dev": "nodemon api/server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "keywords": [
     "llm",

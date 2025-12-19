@@ -97,7 +97,19 @@ function displayMessage(text, type) {
     content.className = 'message-content';
     
     const paragraph = document.createElement('p');
-    paragraph.textContent = text;
+    
+    // Escape HTML to prevent XSS
+    const escapedText = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    // Convert **text** to <strong>text</strong>
+    const formattedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    
+    paragraph.innerHTML = formattedText;
     
     content.appendChild(paragraph);
     messageDiv.appendChild(avatar);
