@@ -18,6 +18,39 @@ const PORT = process.env.PORT || 3000;
 // ========================================
 app.use(cors());
 app.use(express.json());
+
+// ========================================
+// BASIC AUTHENTICATION
+// ========================================
+const authMiddleware = (req, res, next) => {
+    // Skip auth for health check
+    if (req.path === '/api/health') return next();
+
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+        res.setHeader('WWW-Authenticate', 'Basic realm="LLM Tutor Area"');
+        return res.status(401).send('Authentication required');
+    }
+
+    // Decode "Basic base64(user:pass)"
+    const auth = Buffer.from(authHeader.split(' ')[1], 'base64').toString().split(':');
+    const user = auth[0];
+    const pass = auth[1];
+
+    // Check credentials (default: admin / password)
+    const validUser = process.env.AUTH_USER;
+    const validPass = process.env.AUTH_PASS;
+
+    if (user === validUser && pass === validPass) {
+        next();
+    } else {
+        res.setHeader('WWW-Authenticate', 'Basic realm="LLM Tutor Area"');
+        return res.status(401).send('Access denied');
+    }
+};
+
+app.use(authMiddleware);
 app.use(express.static(path.join(__dirname, '..', 'public'))); // Serve frontend files
 
 // ========================================
