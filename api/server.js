@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3000;
 // ========================================
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public')); // Serve frontend files
+app.use(express.static(path.join(__dirname, '..', 'public'))); // Serve frontend files
 
 // ========================================
 // HARDCODED SAMPLE NOTES
@@ -237,28 +237,25 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-// Serve frontend
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
 // ========================================
-// START SERVER
+// START SERVER (only for local development)
 // ========================================
-app.listen(PORT, () => {
-    console.log('========================================');
-    console.log('🎓 LLM Tutor Server Started');
-    console.log('========================================');
-    console.log(`📡 Server running on: http://localhost:${PORT}`);
-    console.log(`🔑 API Key configured: ${process.env.OPENAI_API_KEY ? 'Yes ✓' : 'No ✗'}`);
-    console.log('========================================');
-    
-    // Warn if API key is not set
-    if (!process.env.OPENAI_API_KEY) {
-        console.warn('⚠️  WARNING: OPENAI_API_KEY is not set!');
-        console.warn('   Please set it in your .env file');
-    }
-});
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log('========================================');
+        console.log('🎓 LLM Tutor Server Started');
+        console.log('========================================');
+        console.log(`📡 Server running on: http://localhost:${PORT}`);
+        console.log(`🔑 API Key configured: ${process.env.OPENAI_API_KEY ? 'Yes ✓' : 'No ✗'}`);
+        console.log('========================================');
+        
+        // Warn if API key is not set
+        if (!process.env.OPENAI_API_KEY) {
+            console.warn('⚠️  WARNING: OPENAI_API_KEY is not set!');
+            console.warn('   Please set it in your .env file');
+        }
+    });
+}
 
 // ========================================
 // ERROR HANDLING
@@ -269,8 +266,12 @@ process.on('unhandledRejection', (error) => {
 
 process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
-    process.exit(1);
+    if (process.env.NODE_ENV !== 'production') {
+        process.exit(1);
+    }
 });
 
-module.exports = app;
+// ========================================
+// EXPORT FOR VERCEL
+// ========================================
 module.exports = serverless(app);
