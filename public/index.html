@@ -23,11 +23,19 @@
 
         <!-- Main Content -->
         <main class="main-content">
+        <!-- info -->   
+        <div class="info">
             <!-- Current Topic Display -->
             <div class="topic-display">
                 <span class="topic-label">Current Topic:</span>
                 <span class="topic-name" id="currentTopic">Photosynthesis</span>
             </div>
+            <!-- Current Mode Display -->
+            <div class="current-mode">
+                <span>Mode: </span>
+                <span id="currentMode">None selected</span>
+            </div>
+        </div>  
             <!-- Chat Container -->
             <div class="chat-container" id="chatContainer">
                 <!-- Welcome message -->
@@ -51,11 +59,6 @@
                 <button class="mode-btn" id="simplifyBtn" data-mode="simplify">
                     <i class="ri-lightbulb-flash-line"></i> Simplify this
                 </button>
-            </div>
-            <!-- Current Mode Display -->
-            <div class="current-mode">
-                <span>Mode: </span>
-                <span id="currentMode">None selected</span>
             </div>
             <!-- Input Area -->
             <div class="input-area">
