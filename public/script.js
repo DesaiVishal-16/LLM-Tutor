@@ -1,32 +1,26 @@
-// ========================================
 // LLM TUTOR FRONTEND
-// ========================================
 // This frontend connects to the backend API
 // and handles the chat interface
 
-// ========================================
 // STATE MANAGEMENT
-// ========================================
 let currentMode = null; // Current learning mode: 'explain', 'quiz', or 'simplify'
+let currentLanguage = 'English'; // Selected language
 let isProcessing = false; // Prevent multiple simultaneous requests
 let chatHistory = []; // Store conversation history
 
-// ========================================
 // DOM ELEMENTS
-// ========================================
 const chatContainer = document.getElementById('chatContainer');
 const userInput = document.getElementById('userInput');
 const sendBtn = document.getElementById('sendBtn');
 const currentModeDisplay = document.getElementById('currentMode');
+const languageSelect = document.getElementById('languageSelect');
 
 // Mode buttons
 const explainBtn = document.getElementById('explainBtn');
 const quizBtn = document.getElementById('quizBtn');
 const simplifyBtn = document.getElementById('simplifyBtn');
 
-// ========================================
 // MODE SELECTION HANDLERS
-// ========================================
 // Set the current learning mode
 function setMode(mode) {
     currentMode = mode;
@@ -45,11 +39,50 @@ function setMode(mode) {
 // Update the current mode display text
 function updateModeDisplay(mode) {
     const modeNames = {
-        'explain': '<i class="ri-book-open-line"></i> Explain Mode',
-        'quiz': '<i class="ri-questionnaire-line"></i> Quiz Mode',
-        'simplify': '<i class="ri-lightbulb-flash-line"></i> Simplify Mode'
+        'English': {
+            'explain': '<i class="ri-book-open-line"></i> Explain Mode',
+            'quiz': '<i class="ri-questionnaire-line"></i> Quiz Mode',
+            'simplify': '<i class="ri-lightbulb-flash-line"></i> Simplify Mode'
+        },
+        'Hindi': {
+            'explain': '<i class="ri-book-open-line"></i> व्याख्या मोड',
+            'quiz': '<i class="ri-questionnaire-line"></i> क्विज़ मोड',
+            'simplify': '<i class="ri-lightbulb-flash-line"></i> सरलीकरण मोड'
+        },
+        'Marathi': {
+            'explain': '<i class="ri-book-open-line"></i> स्पष्टीकरण मोड',
+            'quiz': '<i class="ri-questionnaire-line"></i> क्विझ मोड',
+            'simplify': '<i class="ri-lightbulb-flash-line"></i> सुलभ मोड'
+        },
+        'Bengali': {
+            'explain': '<i class="ri-book-open-line"></i> ব্যাখ্যা মোড',
+            'quiz': '<i class="ri-questionnaire-line"></i> কুইজ মোড',
+            'simplify': '<i class="ri-lightbulb-flash-line"></i> সরলীকরণ মোড'
+        },
+        'Tamil': {
+            'explain': '<i class="ri-book-open-line"></i> விளக்க முறை',
+            'quiz': '<i class="ri-questionnaire-line"></i> வினாடி வினா முறை',
+            'simplify': '<i class="ri-lightbulb-flash-line"></i> எளிமைப்படுத்தல் முறை'
+        },
+        'Telugu': {
+            'explain': '<i class="ri-book-open-line"></i> వివరణ మోడ్',
+            'quiz': '<i class="ri-questionnaire-line"></i> క్విజ్ మోడ్',
+            'simplify': '<i class="ri-lightbulb-flash-line"></i> సరళీకరణ మోడ్'
+        },
+        'Kannada': {
+            'explain': '<i class="ri-book-open-line"></i> ವಿವರಣೆ ಮೋಡ್',
+            'quiz': '<i class="ri-questionnaire-line"></i> ರಸಪ್ರಶ್ನೆ ಮೋಡ್',
+            'simplify': '<i class="ri-lightbulb-flash-line"></i> ಸರಳೀಕರಣ ಮೋಡ್'
+        },
+        'Gujarati': {
+            'explain': '<i class="ri-book-open-line"></i> સમજૂતી મોડ',
+            'quiz': '<i class="ri-questionnaire-line"></i> ક્વિઝ મોડ',
+            'simplify': '<i class="ri-lightbulb-flash-line"></i> સરળીકરણ મોડ'
+        }
     };
-    currentModeDisplay.innerHTML = modeNames[mode] || 'None selected';
+    
+    const langModes = modeNames[currentLanguage] || modeNames['English'];
+    currentModeDisplay.innerHTML = langModes[mode] || (translations[currentLanguage]?.noneSelected || 'None selected');
 }
 
 // Update button active states
@@ -67,14 +100,52 @@ function updateButtonStates(mode) {
 
 // Handle mode selection and send initial request
 function handleModeSelection(mode) {
-    // Different initial prompts for each mode
+    // Different initial prompts for each mode and language
     const initialPrompts = {
-        'explain': 'Please explain the concept of photosynthesis.',
-        'quiz': 'I\'m ready to be quizzed on photosynthesis. Please start with a random question.',
-        'simplify': 'Please explain photosynthesis in simple terms.'
+        'English': {
+            'explain': 'Please explain the concept of photosynthesis.',
+            'quiz': 'I\'m ready to be quizzed on photosynthesis. Please start with a random question.',
+            'simplify': 'Please explain photosynthesis in simple terms.'
+        },
+        'Hindi': {
+            'explain': 'कृपया प्रकाश संश्लेषण (photosynthesis) की अवधारणा को समझाएं।',
+            'quiz': 'मैं प्रकाश संश्लेषण पर क्विज़ के लिए तैयार हूँ। कृपया एक यादृच्छिक प्रश्न के साथ शुरू करें।',
+            'simplify': 'कृपया प्रकाश संश्लेषण को सरल शब्दों में समझाएं।'
+        },
+        'Marathi': {
+            'explain': 'कृपया प्रकाश संश्लेषण (photosynthesis) ही संकल्पना स्पष्ट करा.',
+            'quiz': 'मी प्रकाश संश्लेषणावर क्विझसाठी तयार आहे. कृपया एका यादृच्छिक प्रश्नाने सुरुवात करा.',
+            'simplify': 'कृपया प्रकाश संश्लेषण सोप्या शब्दात स्पष्ट करा.'
+        },
+        'Bengali': {
+            'explain': 'দয়া করে সালোকসংশ্লেষণের (photosynthesis) ধারণাটি ব্যাখ্যা করুন।',
+            'quiz': 'আমি সালোকসংশ্লেষণের উপর কুইজের জন্য প্রস্তুত। দয়া করে একটি এলোমেলো প্রশ্ন দিয়ে শুরু করুন।',
+            'simplify': 'দয়া করে সালোকসংশ্লেষণ সহজ ভাষায় ব্যাখ্যা করুন।'
+        },
+        'Tamil': {
+            'explain': 'ஒளிச்சேர்க்கை (photosynthesis) பற்றிய கருத்தை விளக்கவும்.',
+            'quiz': 'ஒளிச்சேர்க்கை பற்றிய வினாடி வினாவிற்கு நான் தயார். தயவுசெய்து ஒரு சீரற்ற கேள்வியுடன் தொடங்கவும்.',
+            'simplify': 'ஒளிச்சேர்க்கையை எளிய சொற்களில் விளக்கவும்.'
+        },
+        'Telugu': {
+            'explain': 'దయచేసి కిరణజన్య సంయోగక్రియ (photosynthesis) భావనను వివరించండి.',
+            'quiz': 'నేను కిరణజన్య సంయోగక్రియపై క్విజ్ కోసం సిద్ధంగా ఉన్నాను. దయచేసి యాదృచ్ఛిక ప్రశ్నతో ప్రారంభించండి.',
+            'simplify': 'దయచేసి కిరణజన్య సంయోగక్రియను సరళమైన పదాలలో వివరించండి.'
+        },
+        'Kannada': {
+            'explain': 'ದಯವಿಟ್ಟು ದ್ಯುತಿಸಂಶ್ಲೇಷಣೆ (photosynthesis) ಪರಿಕಲ್ಪನೆಯನ್ನು ವಿವರಿಸಿ.',
+            'quiz': 'ದ್ಯುತಿಸಂಶ್ಲೇಷಣೆಯ ಕುರಿತು ರಸಪ್ರಶ್ನೆಗೆ ನಾನು ಸಿದ್ಧನಿದ್ದೇನೆ. ದಯವಿಟ್ಟು ಯಾದೃಚ್ಛಿಕ ಪ್ರಶ್ನೆಯೊಂದಿಗೆ ಪ್ರಾರಂಭಿಸಿ.',
+            'simplify': 'ದಯವಿಟ್ಟು ದ್ಯುತಿಸಂಶ್ಲೇಷಣೆಯನ್ನು ಸರಳ ಪದಗಳಲ್ಲಿ ವಿವರಿಸಿ.'
+        },
+        'Gujarati': {
+            'explain': 'કૃપા કરીને પ્રકાશસંશ્લેષણ (photosynthesis) ની વિભાવના સમજાવો.',
+            'quiz': 'હું પ્રકાશસંશ્લેષણ પર ક્વિઝ માટે તૈયાર છું. કૃપા કરીને રેન્ડમ પ્રશ્નથી પ્રારંભ કરો.',
+            'simplify': 'કૃપા કરીને પ્રકાશસંશ્લેષણને સરળ શબ્દોમાં સમજાવો.'
+        }
     };
     
-    const userMessage = initialPrompts[mode];
+    const langPrompts = initialPrompts[currentLanguage] || initialPrompts['English'];
+    const userMessage = langPrompts[mode];
     
     // Display user's automatic message
     displayMessage(userMessage, 'user');
@@ -86,9 +157,7 @@ function handleModeSelection(mode) {
     sendToBackend(userMessage, mode);
 }
 
-// ========================================
 // MESSAGE DISPLAY
-// ========================================
 // Display a message in the chat (type: 'user' or 'ai')
 function displayMessage(text, type) {
     const messageDiv = document.createElement('div');
@@ -206,9 +275,7 @@ function displayError(errorText) {
     displayMessage(`⚠️ Error: ${errorText}`, 'ai');
 }
 
-// ========================================
 // BACKEND COMMUNICATION
-// ========================================
 // Send message to backend API
 async function sendToBackend(userMessage, mode) {
     // Prevent multiple simultaneous requests
@@ -235,6 +302,7 @@ async function sendToBackend(userMessage, mode) {
             body: JSON.stringify({
                 message: userMessage,
                 mode: mode,
+                language: currentLanguage,
                 history: chatHistory // Send conversation history
             })
         });
@@ -279,9 +347,7 @@ async function sendToBackend(userMessage, mode) {
     }
 }
 
-// ========================================
 // UI STATE MANAGEMENT
-// ========================================
 // Enable or disable UI elements
 function setUIEnabled(enabled) {
     sendBtn.disabled = !enabled;
@@ -291,9 +357,7 @@ function setUIEnabled(enabled) {
     simplifyBtn.disabled = !enabled;
 }
 
-// ========================================
 // USER INPUT HANDLING
-// ========================================
 // Handle send button click
 function handleSend() {
     const message = userInput.value.trim();
@@ -336,9 +400,7 @@ function handleKeyPress(event) {
     }
 }
 
-// ========================================
 // EVENT LISTENERS
-// ========================================
 // Mode button clicks
 explainBtn.addEventListener('click', () => setMode('explain'));
 quizBtn.addEventListener('click', () => setMode('quiz'));
@@ -350,12 +412,152 @@ sendBtn.addEventListener('click', handleSend);
 // Enter key press
 userInput.addEventListener('keypress', handleKeyPress);
 
-// ========================================
+// Language selection change
+languageSelect.addEventListener('change', (e) => {
+    currentLanguage = e.target.value;
+    console.log('Language changed to:', currentLanguage);
+    
+    // Update UI labels
+    updateUILabels(currentLanguage);
+    
+    // If a mode is already selected, we might want to refresh the last response in the new language
+    if (currentMode) {
+        setMode(currentMode);
+    }
+});
+
+// UI TRANSLATIONS
+const translations = {
+    'English': {
+        'topicLabel': 'Current Topic:',
+        'topicName': 'Photosynthesis',
+        'modeLabel': 'Mode: ',
+        'explainBtn': '<i class="ri-book-open-line"></i> Explain this concept',
+        'quizBtn': '<i class="ri-questionnaire-line"></i> Quiz me',
+        'simplifyBtn': '<i class="ri-lightbulb-flash-line"></i> Simplify this',
+        'inputPlaceholder': 'Type your message or click a mode button to start...',
+        'noneSelected': 'None selected',
+        'welcomeMessage': "Hello! I'm your AI tutor. Choose a learning mode below and start asking questions about photosynthesis!"
+    },
+    'Hindi': {
+        'topicLabel': 'वर्तमान विषय:',
+        'topicName': 'प्रकाश संश्लेषण',
+        'modeLabel': 'मोड: ',
+        'explainBtn': '<i class="ri-book-open-line"></i> इस अवधारणा को समझाएं',
+        'quizBtn': '<i class="ri-questionnaire-line"></i> मेरी परीक्षा लें',
+        'simplifyBtn': '<i class="ri-lightbulb-flash-line"></i> इसे सरल करें',
+        'inputPlaceholder': 'अपना संदेश टाइप करें या शुरू करने के लिए मोड बटन पर क्लिक करें...',
+        'noneSelected': 'कोई चयनित नहीं',
+        'welcomeMessage': "नमस्ते! मैं आपका AI ट्यूटर हूँ। नीचे एक लर्निंग मोड चुनें और प्रकाश संश्लेषण (photosynthesis) के बारे में प्रश्न पूछना शुरू करें!"
+    },
+    'Marathi': {
+        'topicLabel': 'सध्याचा विषय:',
+        'topicName': 'प्रकाश संश्लेषण',
+        'modeLabel': 'मोड: ',
+        'explainBtn': '<i class="ri-book-open-line"></i> ही संकल्पना स्पष्ट करा',
+        'quizBtn': '<i class="ri-questionnaire-line"></i> माझी क्विझ घ्या',
+        'simplifyBtn': '<i class="ri-lightbulb-flash-line"></i> हे सोपे करा',
+        'inputPlaceholder': 'तुमचा संदेश टाइप करा किंवा सुरू करण्यासाठी मोड बटणावर क्लिक करा...',
+        'noneSelected': 'काहीही निवडलेले नाही',
+        'welcomeMessage': "नमस्कार! मी तुमचा AI ट्यूटर आहे. खालीलपैकी एक मोड निवडा आणि प्रकाश संश्लेषण (photosynthesis) बद्दल प्रश्न विचारायला सुरुवात करा!"
+    },
+    'Bengali': {
+        'topicLabel': 'বর্তমান বিষয়:',
+        'topicName': 'সালোকসংশ্লেষণ',
+        'modeLabel': 'মোড: ',
+        'explainBtn': '<i class="ri-book-open-line"></i> এই ধারণাটি ব্যাখ্যা করুন',
+        'quizBtn': '<i class="ri-questionnaire-line"></i> কুইজ নিন',
+        'simplifyBtn': '<i class="ri-lightbulb-flash-line"></i> এটি সহজ করুন',
+        'inputPlaceholder': 'আপনার বার্তা টাইপ করুন বা শুরু করতে একটি মোড বোতামে ক্লিক করুন...',
+        'noneSelected': 'কোনোটি নির্বাচিত নয়',
+        'welcomeMessage': "হ্যালো! আমি আপনার AI টিউটর। নিচে একটি লার্নিং মোড চয়ন করুন এবং সালোকসংশ্লেষণ (photosynthesis) সম্পর্কে প্রশ্ন জিজ্ঞাসা করা শুরু করুন!"
+    },
+    'Tamil': {
+        'topicLabel': 'தலைப்பு:',
+        'topicName': 'ஒளிச்சேர்க்கை',
+        'modeLabel': 'முறை:',
+        'explainBtn': '<i class="ri-book-open-line"></i> விளக்கம்',
+        'quizBtn': '<i class="ri-questionnaire-line"></i> வினாடி வினா',
+        'simplifyBtn': '<i class="ri-lightbulb-flash-line"></i> எளிமையாக்கு',
+        'inputPlaceholder': 'கேள்வியைக் கேட்கவும்...',
+        'noneSelected': 'தேர்வு செய்யப்படவில்லை',
+        'welcomeMessage': "வணக்கம்! நான் உங்கள் AI பயிற்சி உதவியாளர். ஒரு முறையைத் தேர்ந்தெடுத்து கேள்விகளைக் கேட்கத் தொடங்குங்கள்!"
+    },
+    'Telugu': {
+        'topicLabel': 'ప్రస్తుత అంశం:',
+        'topicName': 'కిరణజన్య సంయోగక్రియ',
+        'modeLabel': 'మోడ్: ',
+        'explainBtn': '<i class="ri-book-open-line"></i> ఈ భావనను వివరించండి',
+        'quizBtn': '<i class="ri-questionnaire-line"></i> క్విజ్ నిర్వహించండి',
+        'simplifyBtn': '<i class="ri-lightbulb-flash-line"></i> దీన్ని సరళీకరించండి',
+        'inputPlaceholder': 'మీ సందేశాన్ని టైప్ చేయండి లేదా ప్రారంభించడానికి మోడ్ బటన్‌ను క్利క్ చేయండి...',
+        'noneSelected': 'ఏదీ ఎంచుకోలేదు',
+        'welcomeMessage': "నమస్కారం! నేను మీ AI ట్యూటర్. కింద ఉన్న లెర్నింగ్ మోడ్‌ను ఎంచుకుని, కిరణజన్య సంయోగక్రియ (photosynthesis) గురించి ప్రశ్నలు అడగడం ప్రారంభించండి!"
+    },
+    'Kannada': {
+        'topicLabel': 'ಪ್ರಸ್ತುತ ವಿಷಯ:',
+        'topicName': 'ದ್ಯುತಿಸಂಶ್ಲೇಷಣೆ',
+        'modeLabel': 'ಮೋಡ್: ',
+        'explainBtn': '<i class="ri-book-open-line"></i> ಈ ಪರಿಕಲ್ಪನೆಯನ್ನು ವಿವರಿಸಿ',
+        'quizBtn': '<i class="ri-questionnaire-line"></i> ರಸಪ್ರಶ್ನೆ ನಡೆಸಿ',
+        'simplifyBtn': '<i class="ri-lightbulb-flash-line"></i> ಇದನ್ನು ಸರಳಗೊಳಿಸಿ',
+        'inputPlaceholder': 'ನಿಮ್ಮ ಸಂದೇಶವನ್ನು ಟೈಪ್ ಮಾಡಿ ಅಥವಾ ಪ್ರಾರಂಭಿಸಲು ಮೋಡ್ ಬಟನ್ ಕ್ಲಿಕ್ ಮಾಡಿ...',
+        'noneSelected': 'ಯಾವುದನ್ನೂ ಆಯ್ಕೆ ಮಾಡಿಲ್ಲ',
+        'welcomeMessage': "ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ AI ಟ್ಯೂಟರ್. ಕೆಳಗಿನ ಕಲಿಕೆಯ ಮೋಡ್ ಅನ್ನು ಆರಿಸಿ ಮತ್ತು ದ್ಯುತಿಸಂಶ್ಲೇಷಣೆ (photosynthesis) ಬಗ್ಗೆ ಪ್ರಶ್ನೆಗಳನ್ನು ಕೇಳಲು ಪ್ರಾರಂಭಿಸಿ!"
+    },
+    'Gujarati': {
+        'topicLabel': 'વર્તમાન વિષય:',
+        'topicName': 'પ્રકાશસંશ્લેષણ',
+        'modeLabel': 'મોડ: ',
+        'explainBtn': '<i class="ri-book-open-line"></i> આ ખ્યાલ સમજાવો',
+        'quizBtn': '<i class="ri-questionnaire-line"></i> મારી ક્વિઝ લો',
+        'simplifyBtn': '<i class="ri-lightbulb-flash-line"></i> આને સરળ બનાવો',
+        'inputPlaceholder': 'તમારો સંદેશ ટાઇપ કરો અથવા શરૂ કરવા માટે મોડ બટન પર ક્લિક કરો...',
+        'noneSelected': 'કોઈ પસંદ કરેલ નથી',
+        'welcomeMessage': "નમસ્તે! હું તમારો AI ટ્યુટર છું. નીચેથી લર્નિંગ મોડ પસંદ કરો અને પ્રકાશસંશ્લેષણ (photosynthesis) વિશે પ્રશ્નો પૂછવાનું શરૂ કરો!"
+    }
+};
+
+function updateUILabels(lang) {
+    const t = translations[lang] || translations['English'];
+    
+    // Update Info
+    document.querySelector('.topic-label').textContent = t.topicLabel;
+    document.getElementById('currentTopic').textContent = t.topicName;
+    document.querySelector('.current-mode span').textContent = t.modeLabel;
+    
+    // Update Buttons
+    explainBtn.innerHTML = t.explainBtn;
+    quizBtn.innerHTML = t.quizBtn;
+    simplifyBtn.innerHTML = t.simplifyBtn;
+    
+    // Update Input
+    userInput.placeholder = t.inputPlaceholder;
+    
+    // Update Welcome Message (if it's the only message in the container)
+    const messages = chatContainer.querySelectorAll('.message');
+    if (messages.length === 1 && messages[0].classList.contains('ai-message')) {
+        const welcomeText = messages[0].querySelector('.message-content p');
+        if (welcomeText) {
+            welcomeText.textContent = t.welcomeMessage;
+        }
+    }
+    
+    // Update Mode Display if none selected
+    if (!currentMode) {
+        currentModeDisplay.textContent = t.noneSelected;
+    } else {
+        updateModeDisplay(currentMode);
+    }
+}
+
 // INITIALIZATION
-// ========================================
 // Focus on input when page loads
 window.addEventListener('load', () => {
     userInput.focus();
+    
+    // Initialize UI labels
+    updateUILabels(currentLanguage);
     
     // Check if backend is available
     checkBackendHealth();
