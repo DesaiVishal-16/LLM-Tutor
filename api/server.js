@@ -1,6 +1,4 @@
-// ========================================
 // SIMPLE LLM TUTOR BACKEND SERVER
-// ========================================
 // This backend serves as the AI tutor API
 // It handles chat requests with different learning modes
 
@@ -13,15 +11,11 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ========================================
 // MIDDLEWARE
-// ========================================
 app.use(cors());
 app.use(express.json());
 
-// ========================================
 // BASIC AUTHENTICATION
-// ========================================
 const authMiddleware = (req, res, next) => {
     // Skip auth for health check
     if (req.path === '/api/health') return next();
@@ -53,9 +47,7 @@ const authMiddleware = (req, res, next) => {
 app.use(authMiddleware);
 app.use(express.static(path.join(__dirname, '..', 'public'))); // Serve frontend files
 
-// ========================================
 // HARDCODED SAMPLE NOTES
-// ========================================
 // These notes are the knowledge base for the AI tutor
 const SAMPLE_NOTES = `
 Topic: Photosynthesis
@@ -90,9 +82,7 @@ Importance:
 - Provides energy for the plant and organisms that eat plants
 `;
 
-// ========================================
 // PROMPT GENERATION LOGIC
-// ========================================
 // Generate mode-specific instructions
 function getModeInstruction(mode) {
     const instructions = {
@@ -105,8 +95,13 @@ function getModeInstruction(mode) {
 }
 
 // Build the complete prompt for the LLM
-function buildPrompt(userMessage, mode, history = []) {
+function buildPrompt(userMessage, mode, language = 'English', history = []) {
     const modeInstruction = getModeInstruction(mode);
+    
+    // Language instruction
+    const languageInstruction = language !== 'English' 
+        ? `IMPORTANT: You MUST provide your entire response in ${language}. Even if the notes are in English, translate the explanation/questions/feedback into ${language}.`
+        : "";
     
     // Format history
     let historyText = "";
@@ -119,6 +114,7 @@ function buildPrompt(userMessage, mode, history = []) {
     
     // Structure: System context + Notes + Mode instruction + History + User message
     const prompt = `You are a helpful AI tutor. Your role is to teach students based on the provided study notes.
+${languageInstruction}
 
 STUDY NOTES:
 ${SAMPLE_NOTES}
@@ -133,9 +129,7 @@ Student's message: ${userMessage}`;
     return prompt;
 }
 
-// ========================================
 // OPENAI API CALL WITH TIMEOUT
-// ========================================
 // Call OpenAI-compatible chat API with timeout
 async function callOpenAI(prompt, mode) {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -201,9 +195,7 @@ async function callOpenAI(prompt, mode) {
     }
 }
 
-// ========================================
 // DEMO MODE RESPONSES (Fallback)
-// ========================================
 function getDemoResponse(mode, message) {
     // Specialized logic for Quiz mode to simulate flow
     if (mode === 'quiz') {
@@ -255,9 +247,7 @@ function getDemoResponse(mode, message) {
     return modeResponses[Math.floor(Math.random() * modeResponses.length)];
 }
 
-// ========================================
 // API ENDPOINTS
-// ========================================
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -267,7 +257,7 @@ app.get('/api/health', (req, res) => {
 // Main chat endpoint
 app.post('/api/chat', async (req, res) => {
     try {
-        const { message, mode, history } = req.body;
+        const { message, mode, language, history } = req.body;
         
         // Validate request
         if (!message || typeof message !== 'string') {
@@ -281,6 +271,13 @@ app.post('/api/chat', async (req, res) => {
                 error: 'Mode must be one of: explain, quiz, simplify' 
             });
         }
+
+        const supportedLanguages = ['English', 'Hindi', 'Marathi', 'Bengali', 'Tamil', 'Telugu', 'Kannada', 'Gujarati'];
+        if (language && !supportedLanguages.includes(language)) {
+            return res.status(400).json({ 
+                error: `Language must be one of: ${supportedLanguages.join(', ')}` 
+            });
+        }
         
         console.log(`[${new Date().toISOString()}] Chat request - Mode: ${mode}`);
         
@@ -289,7 +286,7 @@ app.post('/api/chat', async (req, res) => {
         try {
             // Only attempt OpenAI if key is present
             if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('your-api-key')) {
-                const fullPrompt = buildPrompt(message, mode, history);
+                const fullPrompt = buildPrompt(message, mode, language, history);
                 aiReply = await callOpenAI(fullPrompt, mode);
             } else {
                 throw new Error('No valid API key configured');
@@ -311,9 +308,7 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-// ========================================
 // ERROR HANDLING
-// ========================================
 process.on('unhandledRejection', (error) => {
     console.error('Unhandled Promise Rejection:', error);
 });
