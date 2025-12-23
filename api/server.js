@@ -1,6 +1,3 @@
-// SIMPLE LLM TUTOR BACKEND SERVER
-// This backend serves as the AI tutor API
-// It handles chat requests with different learning modes
 
 const express = require('express');
 const cors = require('cors');
@@ -17,7 +14,7 @@ app.use(express.json());
 
 // BASIC AUTHENTICATION
 const authMiddleware = (req, res, next) => {
-    // Skip auth for health check
+    
     if (req.path === '/api/health') return next();
 
     const authHeader = req.headers.authorization;
@@ -84,19 +81,27 @@ Importance:
 
 // PROMPT GENERATION LOGIC
 // Generate mode-specific instructions
-function getModeInstruction(mode) {
+function getModeInstruction(mode, hasNotes) {
     const instructions = {
-        explain: "Explain the concept clearly with examples using only the notes provided below. Be thorough but concise.",
-        quiz: "Conduct a multiple-choice quiz based on the notes. \n1. Ask ONE question at a time with 4 options (A, B, C, D).\n2. Start with a question about a RANDOM concept from the notes (do not always start with the definition).\n3. When the student answers, start with 'Correct!' or 'Incorrect!' followed by a brief explanation.\n4. ONLY AFTER the explanation, ask the NEXT question.\n5. Number your questions (e.g., Question 1, Question 2).\n6. Continue asking questions indefinitely until the student explicitly says 'stop'. Do not end the quiz automatically.\n7. If the student asks for a 'new quiz', 'restart', or 'start over', ignore the previous conversation and start a fresh quiz from Question 1.\n8. If the student says 'end quiz', 'stop', or 'quit', conclude the quiz and say 'Quiz ended. Type \"new quiz\" to start again.'",
-        simplify: "Explain the concept in very simple words like teaching a beginner or child. Use analogies and everyday examples."
+        explain: hasNotes 
+            ? "Explain the concept clearly with examples using only the notes provided below. Be thorough but concise."
+            : "Explain the concept clearly with examples using your general knowledge. Be thorough but concise.",
+        quiz: hasNotes
+            ? "Conduct a multiple-choice quiz based on the notes. \n1. Ask ONE question at a time with 4 options (A, B, C, D).\n2. Start with a question about a RANDOM concept from the notes (do not always start with the definition).\n3. When the student answers, start with 'Correct!' or 'Incorrect!' followed by a brief explanation.\n4. ONLY AFTER the explanation, ask the NEXT question.\n5. Number your questions (e.g., Question 1, Question 2).\n6. Continue asking questions indefinitely until the student explicitly says 'stop'. Do not end the quiz automatically.\n7. If the student asks for a 'new quiz', 'restart', or 'start over', ignore the previous conversation and start a fresh quiz from Question 1.\n8. If the student says 'end quiz', 'stop', or 'quit', conclude the quiz and say 'Quiz ended. Type \"new quiz\" to start again.'"
+            : "Conduct a multiple-choice quiz based on your general knowledge of the topic. \n1. Ask ONE question at a time with 4 options (A, B, C, D).\n2. When the student answers, start with 'Correct!' or 'Incorrect!' followed by a brief explanation.\n3. ONLY AFTER the explanation, ask the NEXT question.\n4. Number your questions (e.g., Question 1, Question 2).\n5. Continue asking questions indefinitely until the student explicitly says 'stop'.\n6. If the student asks for a 'new quiz', 'restart', or 'start over', start a fresh quiz from Question 1.\n7. If the student says 'end quiz', 'stop', or 'quit', conclude the quiz.",
+        simplify: hasNotes
+            ? "Explain the concept in very simple words like teaching a beginner or child using the notes provided below. Use analogies and everyday examples."
+            : "Explain the concept in very simple words like teaching a beginner or child using your general knowledge. Use analogies and everyday examples."
     };
     
-    return instructions[mode] || instructions.explain;
+    return instructions[mode];
 }
 
 // Build the complete prompt for the LLM
-function buildPrompt(userMessage, mode, language = 'English', history = [], topic = 'Photosynthesis') {
-    const modeInstruction = getModeInstruction(mode);
+function buildPrompt(userMessage, mode, language = 'English', history = [], topic = '') {
+    // Determine if we should use sample notes
+    const isPhotosynthesis = topic.toLowerCase().includes('photosynthesis');
+    const modeInstruction = getModeInstruction(mode, isPhotosynthesis);
     
     // Language instruction
     const languageInstruction = language !== 'English' 
@@ -112,8 +117,6 @@ function buildPrompt(userMessage, mode, language = 'English', history = [], topi
         }).join("\n") + "\n";
     }
     
-    // Determine if we should use sample notes
-    const isPhotosynthesis = topic.toLowerCase().includes('photosynthesis');
     const notesContext = isPhotosynthesis 
         ? `STUDY NOTES:\n${SAMPLE_NOTES}\n\nIMPORTANT: Only use information from the study notes above. Do not add external information.`
         : `TOPIC: ${topic}\n\nINSTRUCTION: Use your general knowledge to teach the student about ${topic}.`;
@@ -147,7 +150,7 @@ async function callOpenAI(prompt, mode) {
     
     // Create abort controller for timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased timeout to 15 seconds
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased timeout to 60 seconds
     
     try {
         const response = await fetch(apiUrl, {
@@ -194,62 +197,11 @@ async function callOpenAI(prompt, mode) {
         clearTimeout(timeoutId);
         console.error('Error calling OpenAI:', error.message);
         
-        // If timeout or API error, throw to trigger fallback
+        // If timeout or API error, throw to the caller
         throw error;
     }
 }
 
-// DEMO MODE RESPONSES (Fallback)
-function getDemoResponse(mode, message) {
-    // Specialized logic for Quiz mode to simulate flow
-    if (mode === 'quiz') {
-        const cleanMsg = message.trim().toUpperCase();
-        
-        // Handle restart request
-        if (cleanMsg.includes('NEW QUIZ') || cleanMsg.includes('RESTART') || cleanMsg.includes('START OVER')) {
-            const startQuestions = [
-                "Question 1: What gas do plants take in from the atmosphere during photosynthesis?\n\nA) Oxygen\nB) Carbon Dioxide\nC) Nitrogen\nD) Hydrogen",
-                "Question 1: Where does the light-dependent reaction take place?\n\nA) Stroma\nB) Thylakoid membranes\nC) Roots\nD) Stem",
-                "Question 1: What is the primary product of photosynthesis?\n\nA) Glucose\nB) Water\nC) Carbon Dioxide\nD) Nitrogen"
-            ];
-            return startQuestions[Math.floor(Math.random() * startQuestions.length)];
-        }
-
-        // Handle end quiz request
-        if (cleanMsg.includes('END QUIZ') || cleanMsg.includes('STOP') || cleanMsg.includes('QUIT')) {
-            return "Quiz ended. Thanks for practicing! Type 'new quiz' to start again.";
-        }
-        
-        // If user sends a single letter answer
-        if (/^[A-D]$/.test(cleanMsg)) {
-            return "Correct! Plants take in Carbon Dioxide to perform photosynthesis.\n\nNext Question:\nWhere does the light-dependent reaction take place?\n\nA) Stroma\nB) Thylakoid membranes\nC) Roots\nD) Stem";
-        }
-        // Default start question (Randomized)
-        const startQuestions = [
-            "Question 1: What gas do plants take in from the atmosphere during photosynthesis?\n\nA) Oxygen\nB) Carbon Dioxide\nC) Nitrogen\nD) Hydrogen",
-            "Question 1: Where does the light-dependent reaction take place?\n\nA) Stroma\nB) Thylakoid membranes\nC) Roots\nD) Stem",
-            "Question 1: What is the primary product of photosynthesis?\n\nA) Glucose\nB) Water\nC) Carbon Dioxide\nD) Nitrogen"
-        ];
-        return startQuestions[Math.floor(Math.random() * startQuestions.length)];
-    }
-
-    const responses = {
-        explain: [
-            "Photosynthesis is the process by which green plants create their own food using sunlight. \n\nThink of it like a solar-powered kitchen inside the leaf:\n1. **Ingredients**: Water (from roots) + Carbon Dioxide (from air)\n2. **Energy**: Sunlight (captured by chlorophyll)\n3. **Product**: Glucose (sugar for food) + Oxygen (released into air)\n\nThe chemical equation is: 6CO₂ + 6H₂O + Light → C₆H₁₂O₆ + 6O₂",
-            "The two main stages are:\n\n1. **Light-Dependent Reactions**: These happen in the thylakoid membranes. They capture sunlight and split water molecules to make energy (ATP/NADPH).\n\n2. **Calvin Cycle**: This happens in the stroma. It uses that energy to turn CO₂ into sugar (glucose).",
-            "This process is vital because it produces the oxygen we breathe and forms the base of the food chain for almost all life on Earth."
-        ],
-        simplify: [
-            "Imagine a plant is like a chef. \n\nIt needs three things to cook:\n1. Sunlight (the fire)\n2. Water (from the rain)\n3. Air (specifically CO₂)\n\nIt mixes them all up in its green leaves and makes sugar! That sugar is its food to help it grow.",
-            "Plants breathe in the bad air (CO₂) and breathe out the good air (Oxygen) that we need to live. They are like nature's air purifiers!",
-            "Green stuff in leaves called 'chlorophyll' is what catches the sunlight. It's like a solar panel for the plant."
-        ]
-    };
-
-    // Return a random response from the selected mode
-    const modeResponses = responses[mode] || responses.explain;
-    return modeResponses[Math.floor(Math.random() * modeResponses.length)];
-}
 
 // API ENDPOINTS
 
@@ -285,19 +237,13 @@ app.post('/api/chat', async (req, res) => {
         
         console.log(`[${new Date().toISOString()}] Chat request - Mode: ${mode}`);
         
-        // Try to call OpenAI, but fall back to Demo Mode if it fails
+        // Call OpenAI
         let aiReply;
-        try {
-            // Only attempt OpenAI if key is present
-            if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('your-api-key')) {
-                const fullPrompt = buildPrompt(message, mode, language, history, topic);
-                aiReply = await callOpenAI(fullPrompt, mode);
-            } else {
-                throw new Error('No valid API key configured');
-            }
-        } catch (error) {
-            console.log('⚠️ Using Demo Mode fallback:', error.message);
-            aiReply = getDemoResponse(mode, message);
+        if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('your-api-key')) {
+            const fullPrompt = buildPrompt(message, mode, language, history, topic);
+            aiReply = await callOpenAI(fullPrompt, mode);
+        } else {
+            throw new Error('No valid API key configured');
         }
         
         // Send response back to frontend

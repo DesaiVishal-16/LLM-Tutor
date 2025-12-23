@@ -1,13 +1,47 @@
-// LLM TUTOR FRONTEND
-// This frontend connects to the backend API
-// and handles the chat interface
 
 // STATE MANAGEMENT
-let currentMode = null; // Current learning mode: 'explain', 'quiz', or 'simplify'
-let currentLanguage = 'English'; // Selected language
-let currentTopic = 'Photosynthesis'; // Default topic
+let currentMode = null; 
+let currentLanguage = 'English'; 
+let currentTopic = ''; 
 let isProcessing = false; // Prevent multiple simultaneous requests
-let chatHistory = []; // Store conversation history
+let chatHistory = []; 
+
+// ACCESSIBILITY STATE
+let isRecording = false;
+let isSpeaking = false;
+let autoRead = false;
+let currentFontSize = 'normal';
+const fontSizes = ['small', 'normal', 'large', 'xlarge'];
+const recognition = 'webkitSpeechRecognition' in window ? new webkitSpeechRecognition() : null;
+
+// Initialize Speech Synthesis
+const synth = window.speechSynthesis;
+let speechHeartbeat = null;
+let voices = [];
+
+// Function to load voices and handle async loading
+function loadVoices() {
+    voices = synth.getVoices();
+    if (voices.length > 0) {
+        console.log(`TTS: ${voices.length} voices loaded`);
+    }
+}
+
+if (synth) {
+    loadVoices();
+    if (synth.onvoiceschanged !== undefined) {
+        synth.onvoiceschanged = loadVoices;
+    }
+}
+
+// Function to keep speech synthesis alive in Chrome
+function keepSpeechAlive() {
+    if (synth && synth.speaking) {
+        synth.pause();
+        synth.resume();
+        speechHeartbeat = setTimeout(keepSpeechAlive, 10000);
+    }
+}
 
 // DOM ELEMENTS
 const chatContainer = document.getElementById('chatContainer');
@@ -17,6 +51,17 @@ const currentModeDisplay = document.getElementById('currentMode');
 const languageSelect = document.getElementById('languageSelect');
 const topicInput = document.getElementById('topicInput');
 const setTopicBtn = document.getElementById('setTopicBtn');
+
+// Accessibility elements
+const accessibilityBtn = document.getElementById('accessibilityBtn');
+const accessibilityModal = document.getElementById('accessibilityModal');
+const closeModal = document.querySelector('.close-modal');
+const voiceBtn = document.getElementById('voiceBtn');
+const highContrastToggle = document.getElementById('highContrastToggle');
+const autoReadToggle = document.getElementById('autoReadToggle');
+const increaseFontBtn = document.getElementById('increaseFont');
+const decreaseFontBtn = document.getElementById('decreaseFont');
+const fontSizeDisplay = document.getElementById('fontSizeDisplay');
 
 // Mode buttons
 const explainBtn = document.getElementById('explainBtn');
@@ -231,6 +276,21 @@ function displayMessage(text, type) {
     paragraph.innerHTML = finalHtml;
     
     content.appendChild(paragraph);
+
+    // Add Listen button for AI messages
+    if (type === 'ai') {
+        const listenBtn = document.createElement('button');
+        listenBtn.className = 'listen-btn';
+        listenBtn.innerHTML = '<i class="ri-volume-up-line"></i> Listen';
+        listenBtn.onclick = () => toggleSpeech(text, listenBtn);
+        content.appendChild(listenBtn);
+
+        // Auto-read if enabled
+        if (autoRead) {
+            setTimeout(() => toggleSpeech(text, listenBtn), 500);
+        }
+    }
+
     messageDiv.appendChild(avatar);
     messageDiv.appendChild(content);
     
@@ -238,6 +298,223 @@ function displayMessage(text, type) {
     
     // Auto-scroll to bottom
     chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// SPEECH SYNTHESIS (TTS)
+function toggleSpeech(text, button) {
+    console.log('TTS: toggleSpeech called', { textLength: text.length, currentLanguage });
+    
+    if (!window.speechSynthesis) {
+        console.error('TTS: window.speechSynthesis not found');
+        alert("Speech synthesis is not supported in your browser.");
+        return;
+    }
+
+    const synth = window.speechSynthesis;
+
+    // If this button is already playing, stop everything and return
+    if (button.classList.contains('playing')) {
+        console.log('TTS: Stopping current speech');
+        synth.cancel();
+        return;
+    }
+
+    // Stop any current speech and reset all buttons
+    console.log('TTS: Cancelling any existing speech');
+    synth.cancel();
+    updateListenButtons(false);
+    clearTimeout(speechHeartbeat);
+
+    // Clean text for speech
+    const cleanText = text
+        .replace(/```[\s\S]*?```/g, '') // Remove code blocks
+        .replace(/\*\*/g, '')           // Remove bold
+        .replace(/###/g, '')            // Remove headers
+        .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove markdown links
+        .trim();
+
+    console.log('TTS: Cleaned text', cleanText.substring(0, 50) + '...');
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    
+    // Language mapping
+    const langMap = {
+        'English': 'en-US', 'Hindi': 'hi-IN', 'Marathi': 'mr-IN',
+        'Bengali': 'bn-IN', 'Tamil': 'ta-IN', 'Telugu': 'te-IN',
+        'Kannada': 'kn-IN', 'Gujarati': 'gu-IN'
+    };
+    const targetLangCode = langMap[currentLanguage] || 'en-US';
+    utterance.lang = targetLangCode;
+    
+    // Voice selection
+    if (voices.length === 0) {
+        voices = synth.getVoices();
+    }
+
+    if (voices.length > 0) {
+        const targetPrefix = targetLangCode.split('-')[0];
+        const voice = voices.find(v => v.lang === targetLangCode) || 
+                      voices.find(v => v.lang.startsWith(targetPrefix)) || 
+                      voices.find(v => v.lang.startsWith('en'));
+        
+        if (voice) {
+            console.log('TTS: Selected voice', voice.name, voice.lang);
+            utterance.voice = voice;
+        }
+    }
+
+    // Set properties explicitly for better compatibility
+    utterance.volume = 1;
+    utterance.rate = 1;
+    utterance.pitch = 1;
+
+    utterance.onstart = () => {
+        console.log('TTS: Speech started');
+        button.classList.add('playing');
+        button.innerHTML = '<i class="ri-stop-circle-line"></i> Stop';
+        keepSpeechAlive();
+    };
+
+    utterance.onend = () => {
+        console.log('TTS: Speech ended');
+        button.classList.remove('playing');
+        button.innerHTML = '<i class="ri-volume-up-line"></i> Listen';
+        clearTimeout(speechHeartbeat);
+    };
+
+    utterance.onerror = (event) => {
+        console.error('TTS: Error event', event.error, event);
+        button.classList.remove('playing');
+        button.innerHTML = '<i class="ri-volume-up-line"></i> Listen';
+        clearTimeout(speechHeartbeat);
+        
+        if (event.error === 'not-allowed') {
+            alert("Speech was blocked. Please click again.");
+        } else if (event.error === 'synthesis-failed') {
+            console.warn('TTS: Synthesis failed. This can happen on some Linux systems if speech-dispatcher is not running.');
+            // Try one last time with default settings if it failed
+            if (!utterance._retried) {
+                console.log('TTS: Retrying with default settings...');
+                const retryUtterance = new SpeechSynthesisUtterance(cleanText);
+                retryUtterance._retried = true;
+                synth.speak(retryUtterance);
+            }
+        }
+    };
+
+    // Speak with a small delay to ensure cancel is fully processed
+    setTimeout(() => {
+        console.log('TTS: Calling synth.speak()');
+        synth.resume();
+        synth.speak(utterance);
+    }, 200);
+}
+
+// Test function for accessibility modal
+function testSpeech() {
+    const testText = "Hello! This is a test of the AI Tutor speech system. If you can hear this, your audio is working correctly.";
+    const dummyBtn = document.createElement('button');
+    toggleSpeech(testText, dummyBtn);
+}
+
+function updateListenButtons(speaking) {
+    const buttons = document.querySelectorAll('.listen-btn');
+    buttons.forEach(btn => {
+        if (!speaking) {
+            btn.classList.remove('playing');
+            btn.innerHTML = '<i class="ri-volume-up-line"></i> Listen';
+        }
+    });
+}
+
+// SPEECH RECOGNITION (STT)
+if (recognition) {
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+        isRecording = true;
+        voiceBtn.classList.add('recording');
+        voiceBtn.innerHTML = '<i class="ri-mic-fill"></i>';
+        userInput.placeholder = "Listening...";
+    };
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        userInput.value = transcript;
+        handleSend();
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        stopRecording();
+    };
+
+    recognition.onend = () => {
+        stopRecording();
+    };
+}
+
+function toggleRecording() {
+    if (!recognition) {
+        alert("Speech recognition is not supported in your browser.");
+        return;
+    }
+
+    if (isRecording) {
+        recognition.stop();
+    } else {
+        const langMap = {
+            'English': 'en-US',
+            'Hindi': 'hi-IN',
+            'Marathi': 'mr-IN',
+            'Bengali': 'bn-IN',
+            'Tamil': 'ta-IN',
+            'Telugu': 'te-IN',
+            'Kannada': 'kn-IN',
+            'Gujarati': 'gu-IN'
+        };
+        recognition.lang = langMap[currentLanguage] || 'en-US';
+        recognition.start();
+    }
+}
+
+function stopRecording() {
+    isRecording = false;
+    voiceBtn.classList.remove('recording');
+    voiceBtn.innerHTML = '<i class="ri-mic-line"></i>';
+    userInput.placeholder = translations[currentLanguage]?.inputPlaceholder || "Type your message...";
+}
+
+// ACCESSIBILITY SETTINGS HANDLERS
+function toggleHighContrast() {
+    document.body.classList.toggle('high-contrast');
+    localStorage.setItem('highContrast', document.body.classList.contains('high-contrast'));
+}
+
+function updateFontSize(delta) {
+    const currentIndex = fontSizes.indexOf(currentFontSize);
+    let newIndex = currentIndex + delta;
+    
+    if (newIndex >= 0 && newIndex < fontSizes.length) {
+        const oldSize = currentFontSize;
+        currentFontSize = fontSizes[newIndex];
+        
+        document.body.classList.remove(`font-${oldSize}`);
+        document.body.classList.add(`font-${currentFontSize}`);
+        
+        fontSizeDisplay.textContent = currentFontSize.charAt(0).toUpperCase() + currentFontSize.slice(1);
+        localStorage.setItem('fontSize', currentFontSize);
+    }
+}
+
+// MODAL HANDLERS
+function openAccessibilityModal() {
+    accessibilityModal.style.display = 'block';
+}
+
+function closeAccessibilityModal() {
+    accessibilityModal.style.display = 'none';
 }
 
 // Format quiz options into clickable buttons
@@ -256,8 +533,7 @@ function formatQuizOptions(text) {
         });
         optionsHtml += '</div>';
         
-        // Remove the original text options to avoid duplication
-        // We replace them with an empty string, then clean up extra newlines
+
         let cleanText = text.replace(optionRegex, '');
         return cleanText.trim() + optionsHtml;
     }
@@ -307,8 +583,9 @@ function removeLoading() {
 }
 
 // Display error message
-function displayError(errorText) {
-    displayMessage(`⚠️ Error: ${errorText}`, 'ai');
+function displayError(errorText, details = '') {
+    const message = details ? `⚠️ Error: ${errorText}\n\nDetails: ${details}` : `⚠️ Error: ${errorText}`;
+    displayMessage(message, 'ai');
 }
 
 // BACKEND COMMUNICATION
@@ -339,8 +616,8 @@ async function sendToBackend(userMessage, mode) {
                 message: userMessage,
                 mode: mode,
                 language: currentLanguage,
-                topic: currentTopic, // Send current topic
-                history: chatHistory // Send conversation history
+                topic: currentTopic, 
+                history: chatHistory 
             })
         });
         
@@ -350,7 +627,8 @@ async function sendToBackend(userMessage, mode) {
         if (!response.ok) {
             // Handle HTTP errors
             const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            const errorMessage = errorData.details ? `${errorData.error}: ${errorData.details}` : (errorData.error || `HTTP error! status: ${response.status}`);
+            throw new Error(errorMessage);
         }
         
         const data = await response.json();
@@ -448,6 +726,48 @@ sendBtn.addEventListener('click', handleSend);
 
 // Enter key press
 userInput.addEventListener('keypress', handleKeyPress);
+
+// Accessibility listeners
+accessibilityBtn.addEventListener('click', openAccessibilityModal);
+closeModal.addEventListener('click', closeAccessibilityModal);
+window.addEventListener('click', (e) => {
+    if (e.target === accessibilityModal) closeAccessibilityModal();
+});
+
+voiceBtn.addEventListener('click', toggleRecording);
+highContrastToggle.addEventListener('change', toggleHighContrast);
+autoReadToggle.addEventListener('change', (e) => {
+    autoRead = e.target.checked;
+    localStorage.setItem('autoRead', autoRead);
+});
+
+increaseFontBtn.addEventListener('click', () => updateFontSize(1));
+decreaseFontBtn.addEventListener('click', () => updateFontSize(-1));
+
+const testSpeechBtn = document.getElementById('testSpeechBtn');
+if (testSpeechBtn) {
+    testSpeechBtn.addEventListener('click', testSpeech);
+}
+
+// Load saved accessibility settings
+window.addEventListener('DOMContentLoaded', () => {
+    if (localStorage.getItem('highContrast') === 'true') {
+        highContrastToggle.checked = true;
+        toggleHighContrast();
+    }
+    
+    const savedFontSize = localStorage.getItem('fontSize');
+    if (savedFontSize && savedFontSize !== 'normal') {
+        currentFontSize = savedFontSize;
+        document.body.classList.add(`font-${currentFontSize}`);
+        fontSizeDisplay.textContent = currentFontSize.charAt(0).toUpperCase() + currentFontSize.slice(1);
+    }
+    
+    if (localStorage.getItem('autoRead') === 'true') {
+        autoRead = true;
+        autoReadToggle.checked = true;
+    }
+});
 
 // Topic input handlers
 setTopicBtn.addEventListener('click', setTopic);
