@@ -18,6 +18,9 @@
             <div class="titleIcon">
                 <img width="48" height="48" src="https://img.icons8.com/glassmorphism/48/graduation-cap.png" alt="graduation-cap"/>
                 <h1 class="headerTitle">AI Tutor Demo</h1>
+                <button id="accessibilityBtn" class="accessibility-btn" title="Accessibility Settings">
+                    <i class="ri-user-settings-line"></i>
+                </button>
             </div>
             <p class="headerSubtitle">Learn smarter with AI-powered assistance</p>
         </header>
@@ -88,6 +91,9 @@
                     placeholder="Type your message or click a mode button to start..."
                     autocomplete="off"
                 >
+                <button id="voiceBtn" class="voice-btn" title="Voice Input">
+                    <i class="ri-mic-line"></i>
+                </button>
                 <button id="sendBtn" class="send-btn">
                     <i class="ri-send-plane-2-fill"></i>
                 </button>
@@ -98,6 +104,46 @@
         <footer class="footer">
             <p>Powered by <a href="https://udayam.co.in/" target="_blank">Udayam AI Labs</a> • LLM Tutor Demo</p>
         </footer>
+    </div>
+    
+    <!-- Accessibility Settings Modal -->
+    <div id="accessibilityModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Accessibility Settings</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-item">
+                    <label for="fontSize">Font Size</label>
+                    <div class="font-controls">
+                        <button id="decreaseFont">A-</button>
+                        <span id="fontSizeDisplay">Normal</span>
+                        <button id="increaseFont">A+</button>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <label for="highContrast">High Contrast</label>
+                    <label class="switch">
+                        <input type="checkbox" id="highContrastToggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label for="autoRead">Auto-read AI responses</label>
+                    <label class="switch">
+                        <input type="checkbox" id="autoReadToggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label>Verify Audio</label>
+                    <button id="testSpeechBtn" class="test-speech-btn">
+                        <i class="ri-volume-up-line"></i> Test Speech
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="script.js"></script>
