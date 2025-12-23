@@ -44,54 +44,14 @@ const authMiddleware = (req, res, next) => {
 app.use(authMiddleware);
 app.use(express.static(path.join(__dirname, '..', 'public'))); // Serve frontend files
 
-// HARDCODED SAMPLE NOTES
-// These notes are the knowledge base for the AI tutor
-const SAMPLE_NOTES = `
-Topic: Photosynthesis
-
-Definition:
-Photosynthesis is the process by which green plants use sunlight to synthesize nutrients from carbon dioxide and water. It primarily occurs in the chloroplasts of plant cells.
-
-Key Points:
-- Photosynthesis converts light energy into chemical energy stored in glucose
-- The process requires chlorophyll (green pigment), sunlight, carbon dioxide, and water
-- Oxygen is released as a byproduct
-- Takes place mainly in leaves
-
-The Chemical Equation:
-6CO₂ + 6H₂O + Light Energy → C₆H₁₂O₆ + 6O₂
-
-Two Main Stages:
-1. Light-dependent reactions (occur in thylakoid membranes)
-   - Capture light energy
-   - Split water molecules
-   - Produce ATP and NADPH
-
-2. Light-independent reactions / Calvin Cycle (occur in stroma)
-   - Use ATP and NADPH from light reactions
-   - Fix carbon dioxide into glucose
-   - Can occur in light or dark
-
-Importance:
-- Produces oxygen for the atmosphere
-- Forms the base of most food chains
-- Removes CO₂ from the atmosphere
-- Provides energy for the plant and organisms that eat plants
-`;
 
 // PROMPT GENERATION LOGIC
 // Generate mode-specific instructions
-function getModeInstruction(mode, hasNotes) {
+function getModeInstruction(mode) {
     const instructions = {
-        explain: hasNotes 
-            ? "Explain the concept clearly with examples using only the notes provided below. Be thorough but concise."
-            : "Explain the concept clearly with examples using your general knowledge. Be thorough but concise.",
-        quiz: hasNotes
-            ? "Conduct a multiple-choice quiz based on the notes. \n1. Ask ONE question at a time with 4 options (A, B, C, D).\n2. Start with a question about a RANDOM concept from the notes (do not always start with the definition).\n3. When the student answers, start with 'Correct!' or 'Incorrect!' followed by a brief explanation.\n4. ONLY AFTER the explanation, ask the NEXT question.\n5. Number your questions (e.g., Question 1, Question 2).\n6. Continue asking questions indefinitely until the student explicitly says 'stop'. Do not end the quiz automatically.\n7. If the student asks for a 'new quiz', 'restart', or 'start over', ignore the previous conversation and start a fresh quiz from Question 1.\n8. If the student says 'end quiz', 'stop', or 'quit', conclude the quiz and say 'Quiz ended. Type \"new quiz\" to start again.'"
-            : "Conduct a multiple-choice quiz based on your general knowledge of the topic. \n1. Ask ONE question at a time with 4 options (A, B, C, D).\n2. When the student answers, start with 'Correct!' or 'Incorrect!' followed by a brief explanation.\n3. ONLY AFTER the explanation, ask the NEXT question.\n4. Number your questions (e.g., Question 1, Question 2).\n5. Continue asking questions indefinitely until the student explicitly says 'stop'.\n6. If the student asks for a 'new quiz', 'restart', or 'start over', start a fresh quiz from Question 1.\n7. If the student says 'end quiz', 'stop', or 'quit', conclude the quiz.",
-        simplify: hasNotes
-            ? "Explain the concept in very simple words like teaching a beginner or child using the notes provided below. Use analogies and everyday examples."
-            : "Explain the concept in very simple words like teaching a beginner or child using your general knowledge. Use analogies and everyday examples."
+        explain: "Explain the concept clearly with examples using your general knowledge. Be thorough but concise.",
+        quiz: "Conduct a multiple-choice quiz based on your general knowledge of the topic. \n1. Ask ONE question at a time with 4 options (A, B, C, D).\n2. When the student answers, start with 'Correct!' or 'Incorrect!' followed by a brief explanation.\n3. ONLY AFTER the explanation, ask the NEXT question.\n4. Number your questions (e.g., Question 1, Question 2).\n5. Continue asking questions indefinitely until the student explicitly says 'stop'.\n6. If the student asks for a 'new quiz', 'restart', or 'start over', start a fresh quiz from Question 1.\n7. If the student says 'end quiz', 'stop', or 'quit', conclude the quiz.",
+        simplify: "Explain the concept in very simple words like teaching a beginner or child using your general knowledge. Use analogies and everyday examples."
     };
     
     return instructions[mode];
@@ -99,13 +59,11 @@ function getModeInstruction(mode, hasNotes) {
 
 // Build the complete prompt for the LLM
 function buildPrompt(userMessage, mode, language = 'English', history = [], topic = '') {
-    // Determine if we should use sample notes
-    const isPhotosynthesis = topic.toLowerCase().includes('photosynthesis');
-    const modeInstruction = getModeInstruction(mode, isPhotosynthesis);
+    const modeInstruction = getModeInstruction(mode);
     
     // Language instruction
     const languageInstruction = language !== 'English' 
-        ? `IMPORTANT: You MUST provide your entire response in ${language}. Even if the notes are in English, translate the explanation/questions/feedback into ${language}.`
+        ? `IMPORTANT: You MUST provide your entire response in ${language}. Translate the explanation/questions/feedback into ${language}.`
         : "";
     
     // Format history
@@ -117,9 +75,7 @@ function buildPrompt(userMessage, mode, language = 'English', history = [], topi
         }).join("\n") + "\n";
     }
     
-    const notesContext = isPhotosynthesis 
-        ? `STUDY NOTES:\n${SAMPLE_NOTES}\n\nIMPORTANT: Only use information from the study notes above. Do not add external information.`
-        : `TOPIC: ${topic}\n\nINSTRUCTION: Use your general knowledge to teach the student about ${topic}.`;
+    const notesContext = `TOPIC: ${topic}\n\nINSTRUCTION: Use your general knowledge to teach the student about ${topic}.`;
 
     // Structure: System context + Notes + Mode instruction + History + User message
     const prompt = `You are a helpful AI tutor. Your role is to teach students about ${topic}.
