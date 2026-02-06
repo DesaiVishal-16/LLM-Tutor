@@ -2,51 +2,18 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const litellm = require('litellm');
 require('dotenv').config();
-
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// MIDDLEWARE
 app.use(cors());
 app.use(express.json());
 
-// BASIC AUTHENTICATION
-const authMiddleware = (req, res, next) => {
-    
-    if (req.path === '/api/health') return next();
 
-    const authHeader = req.headers.authorization;
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
-    if (!authHeader) {
-        res.setHeader('WWW-Authenticate', 'Basic realm="LLM Tutor Area"');
-        return res.status(401).send('Authentication required');
-    }
-
-    // Decode "Basic base64(user:pass)"
-    const auth = Buffer.from(authHeader.split(' ')[1], 'base64').toString().split(':');
-    const user = auth[0];
-    const pass = auth[1];
-
-    // Check credentials (default: admin / password)
-    const validUser = process.env.AUTH_USER;
-    const validPass = process.env.AUTH_PASS;
-
-    if (user === validUser && pass === validPass) {
-        next();
-    } else {
-        res.setHeader('WWW-Authenticate', 'Basic realm="LLM Tutor Area"');
-        return res.status(401).send('Access denied');
-    }
-};
-
-app.use(authMiddleware);
-app.use(express.static(path.join(__dirname, '..', 'public'))); // Serve frontend files
-
-
-// PROMPT GENERATION LOGIC
-// Generate mode-specific instructions
 function getModeInstruction(mode) {
     const instructions = {
         explain: "Explain the concept clearly with examples using your general knowledge. Be thorough but concise.",
@@ -57,16 +24,13 @@ function getModeInstruction(mode) {
     return instructions[mode];
 }
 
-// Build the complete prompt for the LLM
 function buildPrompt(userMessage, mode, language = 'English', history = [], topic = '') {
     const modeInstruction = getModeInstruction(mode);
     
-    // Language instruction
     const languageInstruction = language !== 'English' 
         ? `IMPORTANT: You MUST provide your entire response in ${language}. Translate the explanation/questions/feedback into ${language}.`
         : "";
     
-    // Format history
     let historyText = "";
     if (history.length > 0) {
         historyText = "\nCONVERSATION HISTORY:\n" + history.map(msg => {
@@ -77,7 +41,6 @@ function buildPrompt(userMessage, mode, language = 'English', history = [], topi
     
     const notesContext = `TOPIC: ${topic}\n\nINSTRUCTION: Use your general knowledge to teach the student about ${topic}.`;
 
-    // Structure: System context + Notes + Mode instruction + History + User message
     const prompt = `You are a helpful AI tutor. Your role is to teach students about ${topic}.
 ${languageInstruction}
 
@@ -92,86 +55,58 @@ Student's message: ${userMessage}`;
     return prompt;
 }
 
-// OPENAI API CALL WITH TIMEOUT
-// Call OpenAI-compatible chat API with timeout
-async function callOpenAI(prompt, mode) {
-    const apiKey = process.env.OPENAI_API_KEY;
+async function callLiteLLM(prompt) {
+    const apiKey = process.env.HUGGINGFACE_API_KEY;
     
-    // Check if API key is set
-    if (!apiKey) {
-        throw new Error('OPENAI_API_KEY is not set in environment variables');
+    if (!apiKey || apiKey === 'your_huggingface_token_here') {
+        throw new Error('HUGGINGFACE_API_KEY is not set in .env file');
     }
     
-    const apiUrl = process.env.OPENAI_API_URL || 'https://api.openai.com/v1/chat/completions';
-    
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased timeout to 60 seconds
+    const model = process.env.LITELLM_MODEL || 'moonshotai/Kimi-K2-Thinking';
     
     try {
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a helpful AI tutor.'
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
-                temperature: 0.7,
-                max_tokens: 1000 // Increased token limit
-            }),
-            signal: controller.signal
+        const response = await litellm.completion({
+            model: model,
+            api_key: apiKey,
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are a helpful AI tutor.'
+                },
+                {
+                    role: 'user',
+                    content: prompt
+                }
+            ],
+            temperature: 0.7,
+            max_tokens: 2000
         });
-        
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(`OpenAI API error: ${response.status} - ${JSON.stringify(errorData)}`);
-        }
-        
-        const data = await response.json();
-        
-        // Extract the AI's reply
-        if (data.choices && data.choices.length > 0) {
-            return data.choices[0].message.content;
+
+        if (response.choices && response.choices.length > 0) {
+            return response.choices[0].message.content;
         } else {
-            throw new Error('Unexpected response format from OpenAI API');
+            throw new Error('Unexpected response format from LiteLLM');
         }
         
     } catch (error) {
-        clearTimeout(timeoutId);
-        console.error('Error calling OpenAI:', error.message);
-        
-        // If timeout or API error, throw to the caller
+        console.error('Error calling LiteLLM:', error.message);
         throw error;
     }
 }
 
-
-// API ENDPOINTS
-
-// Health check endpoint
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', message: 'LLM Tutor API is running' });
+    res.json({ 
+        status: 'ok', 
+        message: 'LLM Tutor API is running',
+        model: process.env.LITELLM_MODEL || 'moonshotai/Kimi-K2-Thinking',
+        provider: 'LiteLLM + Hugging Face'
+    });
 });
 
-// Main chat endpoint
 app.post('/api/chat', async (req, res) => {
     try {
         const { message, mode, language, history, topic } = req.body;
         
-        // Validate request
         if (!message || typeof message !== 'string') {
             return res.status(400).json({ 
                 error: 'Message is required and must be a string' 
@@ -191,18 +126,19 @@ app.post('/api/chat', async (req, res) => {
             });
         }
         
-        console.log(`[${new Date().toISOString()}] Chat request - Mode: ${mode}`);
+        console.log(`[${new Date().toISOString()}] Chat request - Mode: ${mode}, Model: ${process.env.LITELLM_MODEL}`);
         
-        // Call OpenAI
-        let aiReply;
-        if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('your-api-key')) {
-            const fullPrompt = buildPrompt(message, mode, language, history, topic);
-            aiReply = await callOpenAI(fullPrompt, mode);
-        } else {
-            throw new Error('No valid API key configured');
+        const apiKey = process.env.HUGGINGFACE_API_KEY;
+        if (!apiKey || apiKey === 'your_huggingface_token_here') {
+            return res.status(500).json({ 
+                error: 'HUGGINGFACE_API_KEY is not configured in .env file',
+                message: 'Please set your Hugging Face token in the .env file'
+            });
         }
         
-        // Send response back to frontend
+        const fullPrompt = buildPrompt(message, mode, language, history, topic);
+        const aiReply = await callLiteLLM(fullPrompt);
+        
         res.json({ reply: aiReply });
         
     } catch (error) {
@@ -214,7 +150,6 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-// ERROR HANDLING
 process.on('unhandledRejection', (error) => {
     console.error('Unhandled Promise Rejection:', error);
 });
