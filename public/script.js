@@ -6,6 +6,33 @@ let currentTopic = '';
 let isProcessing = false; // Prevent multiple simultaneous requests
 let chatHistory = []; 
 
+// HUGGING FACE API CONFIGURATION
+let huggingfaceApiKey = '';
+
+// Load Hugging Face API key from server on startup
+async function loadHuggingFaceConfig() {
+    try {
+        const response = await fetch('/api/config');
+        const config = await response.json();
+        if (config.isConfigured) {
+            huggingfaceApiKey = config.huggingfaceApiKey;
+            window.huggingfaceModel = config.model || 'meta-llama/Meta-Llama-3-8B-Instruct';
+            console.log('Hugging Face API key loaded from .env, model:', window.huggingfaceModel);
+        } else {
+            console.log('Hugging Face API key not configured in .env');
+        }
+        return config;
+    } catch (error) {
+        console.error('Failed to load Hugging Face config:', error);
+        return { isConfigured: false };
+    }
+}
+
+// Check if Hugging Face API key is configured
+function isHuggingFaceConfigured() {
+    return huggingfaceApiKey && huggingfaceApiKey !== '';
+}
+
 // ACCESSIBILITY STATE
 let isRecording = false;
 let isSpeaking = false;
@@ -597,6 +624,12 @@ async function sendToBackend(userMessage, mode) {
         return;
     }
     
+    // Check if Hugging Face API key is configured
+    if (!isHuggingFaceConfigured()) {
+        displayError('Please set your Hugging Face API key in the .env file.\nGet your key from: https://huggingface.co/settings/tokens');
+        return;
+    }
+    
     isProcessing = true;
     
     // Disable input and buttons
@@ -606,18 +639,24 @@ async function sendToBackend(userMessage, mode) {
     displayLoading();
     
     try {
-        // Make API call to backend
-        const response = await fetch('/api/chat', {
+        // Build the prompt for Hugging Face
+        const prompt = buildHuggingFacePrompt(userMessage, mode, currentLanguage, chatHistory, currentTopic);
+        
+        // Call Hugging Face Inference API using OpenAI-compatible endpoint
+        const model = window.huggingfaceModel || 'meta-llama/Meta-Llama-3-8B-Instruct';
+        const response = await fetch(`https://router.huggingface.co/v1/chat/completions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Authorization': `Bearer ${huggingfaceApiKey}`
             },
             body: JSON.stringify({
-                message: userMessage,
-                mode: mode,
-                language: currentLanguage,
-                topic: currentTopic, 
-                history: chatHistory 
+                model: model,
+                messages: [
+                    { role: 'user', content: prompt }
+                ],
+                max_tokens: 2000,
+                temperature: 0.7
             })
         });
         
@@ -625,22 +664,34 @@ async function sendToBackend(userMessage, mode) {
         removeLoading();
         
         if (!response.ok) {
-            // Handle HTTP errors
-            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-            const errorMessage = errorData.details ? `${errorData.error}: ${errorData.details}` : (errorData.error || `HTTP error! status: ${response.status}`);
-            throw new Error(errorMessage);
+            const errorText = await response.text().catch(() => 'No response body');
+            try {
+                const errorData = JSON.parse(errorText);
+                throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+            } catch {
+                throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+            }
         }
         
         const data = await response.json();
         
-        // Display AI response
-        if (data.reply) {
-            displayMessage(data.reply, 'ai');
-            // Add AI response to history
-            chatHistory.push({ role: 'assistant', content: data.reply });
+        // Extract AI response
+        let reply = '';
+        if (data.choices && data.choices.length > 0) {
+            reply = data.choices[0].message.content;
+        } else if (Array.isArray(data) && data.length > 0) {
+            reply = data[0].generated_text;
+        } else if (data.generated_text) {
+            reply = data.generated_text;
         } else {
-            displayError('Received an unexpected response format from the server.');
+            displayError('Received an unexpected response format from Hugging Face.');
+            return;
         }
+        
+        // Display AI response
+        displayMessage(reply, 'ai');
+        // Add AI response to history
+        chatHistory.push({ role: 'assistant', content: reply });
         
     } catch (error) {
         // Remove loading indicator
@@ -649,8 +700,8 @@ async function sendToBackend(userMessage, mode) {
         // Display error message
         console.error('Error:', error);
         
-        if (error.message.includes('fetch')) {
-            displayError('Cannot connect to the server. Please make sure the backend is running.');
+        if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+            displayError('Cannot connect to Hugging Face API. Please check your internet connection.');
         } else {
             displayError(error.message);
         }
@@ -660,6 +711,40 @@ async function sendToBackend(userMessage, mode) {
         setUIEnabled(true);
         isProcessing = false;
     }
+}
+
+// Build prompt for Hugging Face
+function buildHuggingFacePrompt(userMessage, mode, language, history, topic) {
+    const modeInstructions = {
+        explain: "Explain the concept clearly with examples using your general knowledge. Be thorough but concise.",
+        quiz: "Conduct a multiple-choice quiz based on your general knowledge of the topic. \n1. Ask ONE question at a time with 4 options (A, B, C, D).\n2. When the student answers, start with 'Correct!' or 'Incorrect!' followed by a brief explanation.\n3. ONLY AFTER the explanation, ask the NEXT question.\n4. Number your questions (e.g., Question 1, Question 2).\n5. Continue asking questions indefinitely until the student explicitly says 'stop'.\n6. If the student asks for a 'new quiz', 'restart', or 'start over', start a fresh quiz from Question 1.\n7. If the student says 'end quiz', 'stop', or 'quit', conclude the quiz.",
+        simplify: "Explain the concept in very simple words like teaching a beginner or child using your general knowledge. Use analogies and everyday examples."
+    };
+    
+    const modeInstruction = modeInstructions[mode] || modeInstructions.explain;
+    
+    const languageInstruction = language !== 'English' 
+        ? `IMPORTANT: You MUST provide your entire response in ${language}. Translate the explanation/questions/feedback into ${language}.`
+        : "";
+    
+    let historyText = "";
+    if (history.length > 0) {
+        historyText = "\nCONVERSATION HISTORY:\n" + history.map(msg => {
+            const role = msg.role === 'user' ? 'Student' : 'Tutor';
+            return `${role}: ${msg.content}`;
+        }).join("\n") + "\n";
+    }
+    
+    return `You are a helpful AI tutor. Your role is to teach students about ${topic}.
+${languageInstruction}
+
+TOPIC: ${topic}
+
+INSTRUCTIONS:
+${modeInstruction}
+
+${historyText}
+Student's message: ${userMessage}`;
 }
 
 // UI STATE MANAGEMENT
@@ -751,6 +836,9 @@ if (testSpeechBtn) {
 
 // Load saved accessibility settings
 window.addEventListener('DOMContentLoaded', () => {
+    // Load Hugging Face API config from server
+    loadHuggingFaceConfig();
+    
     if (localStorage.getItem('highContrast') === 'true') {
         highContrastToggle.checked = true;
         toggleHighContrast();
